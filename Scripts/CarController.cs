@@ -63,6 +63,10 @@ namespace tum_car_controller
         private bool inputLeft = false;
         private bool inputRight = false;
         private bool isTeleportOnlyMode = false;
+        
+    [Header("Manual Control")]
+    [Tooltip("Enable to drive the car manually using WASD.")]
+    public bool manualDriven = false; // default unchecked in inspector
 
         [Header("Vehicle Parameters")]
         public float currentSpeed = 0.0f;
@@ -116,7 +120,12 @@ namespace tum_car_controller
 
         void Update()
         {
-            if (isSumoVehicle)
+            // Prioritize manual driving when enabled
+            if (manualDriven)
+            {
+                UpdateManualInput();
+            }
+            else if (isSumoVehicle)
             {
                 UpdateSumoVehicle();
             }
@@ -208,10 +217,10 @@ namespace tum_car_controller
 
             if (wheelFL != null && wheelFR != null && wheelRL != null && wheelRR != null)
             {
-                wheelFL.transform.Rotate(Vector3.up, -1 * rotationAmount);
-                wheelFR.transform.Rotate(Vector3.up, -1 * rotationAmount);
-                wheelRL.transform.Rotate(Vector3.up, -1 * rotationAmount);
-                wheelRR.transform.Rotate(Vector3.up, -1 * rotationAmount);
+                wheelFL.transform.Rotate(Vector3.left, -1 * rotationAmount);
+                wheelFR.transform.Rotate(Vector3.left, -1 * rotationAmount);
+                wheelRL.transform.Rotate(Vector3.left, -1 * rotationAmount);
+                wheelRR.transform.Rotate(Vector3.left, -1 * rotationAmount);
             }
         }
 
@@ -226,7 +235,7 @@ namespace tum_car_controller
             Mathf.Clamp(visualSteeringAngle, -maxSteeringAngle, maxSteeringAngle);
 
             // Apply the steering angle to the front wheels
-            Quaternion steeringRotation = Quaternion.Euler(0, 0, visualSteeringAngle);
+            Quaternion steeringRotation = Quaternion.Euler(0, visualSteeringAngle, 0);
             if (wheelJointFL != null && wheelJointFR != null)
             {
                 wheelJointFL.transform.localRotation = steeringRotation;
@@ -236,10 +245,11 @@ namespace tum_car_controller
 
         void UpdateManualInput()
         {
-            inputBrake = Input.GetKey(KeyCode.UpArrow);
-            inputAccelerate = Input.GetKey(KeyCode.DownArrow);
-            inputLeft = Input.GetKey(KeyCode.LeftArrow);
-            inputRight = Input.GetKey(KeyCode.RightArrow);
+            // WASD manual controls
+            inputAccelerate = Input.GetKey(KeyCode.W);
+            inputBrake = Input.GetKey(KeyCode.S);
+            inputLeft = Input.GetKey(KeyCode.A);
+            inputRight = Input.GetKey(KeyCode.D);
 
             steeringInput = 0f;
             if (inputLeft)
@@ -288,8 +298,24 @@ namespace tum_car_controller
 
         void HandleAcceleration()
         {
+            // Manual driving overrides SUMO when enabled
+            if (manualDriven)
+            {
+                if (inputAccelerate && currentSpeed < maxSpeed)
+                {
+                    currentSpeed += acceleration * Time.fixedDeltaTime;
+                }
+                else if (inputBrake && currentSpeed > -maxReverseSpeed)
+                {
+                    currentSpeed -= brakingForce * Time.fixedDeltaTime;
+                }
+                else
+                {
+                    currentSpeed = Mathf.MoveTowards(currentSpeed, 0, deceleration * Time.fixedDeltaTime);
+                }
+            }
             //sumo
-            if (isSumoVehicle)
+            else if (isSumoVehicle)
             {
                 if (toruqeInputAccelerate > 0 && currentSpeed < maxSpeed)
                 {
@@ -307,11 +333,11 @@ namespace tum_car_controller
             // manual
             else
             {
-                if (inputBrake && currentSpeed < maxSpeed)
+                if (inputAccelerate && currentSpeed < maxSpeed)
                 {
                     currentSpeed += acceleration * Time.fixedDeltaTime;
                 }
-                else if (inputAccelerate && currentSpeed > -maxReverseSpeed)
+                else if (inputBrake && currentSpeed > -maxReverseSpeed)
                 {
                     currentSpeed -= brakingForce * Time.fixedDeltaTime;
                 }
