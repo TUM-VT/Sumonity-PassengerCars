@@ -1,3 +1,12 @@
+/*
+ * CarController.cs - Vehicle simulation controller
+ * 
+ * This script controls 3D car models from the "Generic passenger car pack" by Comrade1280
+ * Source: https://sketchfab.com/3d-models/generic-passenger-car-pack-20f9af9b8a404d5cb022ac6fe87f21f5
+ * License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+ * Attribution: "Generic passenger car pack" by Comrade1280 is licensed under CC BY 4.0
+ */
+
 using UnityEngine;
 
 namespace tum_car_controller
