@@ -64,9 +64,9 @@ namespace tum_car_controller
         private bool inputRight = false;
         private bool isTeleportOnlyMode = false;
         
-    [Header("Manual Control")]
-    [Tooltip("Enable to drive the car manually using WASD.")]
-    public bool manualDriven = false; // default unchecked in inspector
+        [Header("Manual Control")]
+        [Tooltip("Enable to drive the car manually using WASD.")]
+        public bool manualDriven = false; // default unchecked in inspector
 
         [Header("Vehicle Parameters")]
         public float currentSpeed = 0.0f;
@@ -98,13 +98,48 @@ namespace tum_car_controller
         private Vector2 rbMarker;
         private float stopState;
 
+        [Header("Dynamic Model")]
+        [Tooltip("Distance from CG to front axle [m]")]
+        public float lf = 1.5f;
+        [Tooltip("Distance from CG to rear axle [m]")]
+        public float lr = 1.5f;
+        [Tooltip("Maximum steering angle at the wheels [deg]")]
+        public float maxSteerAngleDeg = 30f;
+        [Tooltip("How fast the steering can change [deg/s]")]
+        public float steerRateDegPerSec = 120f;
+        [Tooltip("Maximum lateral acceleration [m/s^2] to keep turning plausible")]
+        public float maxLateralAccel = 8.0f;
+        [Tooltip("Quadratic air drag coefficient (simplified)")]
+        public float airDrag = 0.3f;
+        [Tooltip("Rolling resistance (~g * crr)")]
+        public float rollingResistance = 0.2f;
+
+        // Internal state for the model
+        private float steerAngleDeg = 0f;          // current wheel steer angle (deg)
+        private float desiredSteerNormalized = 0f; // -1..1 desired steer
+        private float driveCommand = 0f;           // -1..1 desired long accel (S=-1 brake, W=+1 accel)
+
+        [Header("Coordinate Frame")]
+        [Tooltip("Yaw offset (deg) to align dynamics forward (+Z) to the object's visual forward. Set 180 if your car appears to drive backwards.")]
+        public float frameYawOffsetDeg = 0f;
+
         void Start()
         {
             rb = GetComponent<Rigidbody>();
             wheelBase = 3.0f; // Adjust based on your bus model
 
+            // If lf/lr not set meaningfully, split the wheelbase
+            if (lf <= 0f || lr <= 0f)
+            {
+                lf = wheelBase * 0.5f;
+                lr = wheelBase * 0.5f;
+            }
+
             // Initialize SUMO integration
             InitializeSumoIntegration();
+
+            // Initialize internal state - no longer needed as we use rb.rotation directly
+            // yawRad = Mathf.Deg2Rad * (rb.rotation.eulerAngles.y + frameYawOffsetDeg);
         }
 
         private void InitializeSumoIntegration()
@@ -200,7 +235,9 @@ namespace tum_car_controller
                 toruqeInputAccelerate = 0f;
             }
 
-            steeringInput = steeringValue;
+            // Steering value expected in [-1,1]
+            desiredSteerNormalized = Mathf.Clamp(steeringValue, -1f, 1f);
+            steeringInput = desiredSteerNormalized; // keep legacy field updated for visuals
         }
 
         void RotateWheels()
@@ -229,12 +266,11 @@ namespace tum_car_controller
         {
             // Calculate the current steering angle based on the input 
 
-            float visualSteeringMultiplicatorGain = 3;
-            float visualSteeringAngle = maxSteeringAngle * steeringInput * visualSteeringMultiplicatorGain;
+            float visualSteeringMultiplicatorGain = 3f;
+            float visualSteeringAngle = steerAngleDeg * visualSteeringMultiplicatorGain;
+            visualSteeringAngle = Mathf.Clamp(visualSteeringAngle, -maxSteeringAngle * visualSteeringMultiplicatorGain, maxSteeringAngle * visualSteeringMultiplicatorGain);
 
-            Mathf.Clamp(visualSteeringAngle, -maxSteeringAngle, maxSteeringAngle);
-
-            // Apply the steering angle to the front wheels
+            // Apply the steering angle to the front wheels (Y axis assumed up)
             Quaternion steeringRotation = Quaternion.Euler(0, visualSteeringAngle, 0);
             if (wheelJointFL != null && wheelJointFR != null)
             {
@@ -251,15 +287,13 @@ namespace tum_car_controller
             inputLeft = Input.GetKey(KeyCode.A);
             inputRight = Input.GetKey(KeyCode.D);
 
-            steeringInput = 0f;
-            if (inputLeft)
-            {
-                steeringInput = -0.1f;
-            }
-            else if (inputRight)
-            {
-                steeringInput = 0.1f;
-            }
+            // desired steer command in [-1,1]
+            // Left = negative steering (turn left), Right = positive steering (turn right)
+            desiredSteerNormalized = 0f;
+            if (inputLeft) desiredSteerNormalized -= 1f;  // A key = turn left = negative
+            if (inputRight) desiredSteerNormalized += 1f; // D key = turn right = positive
+            desiredSteerNormalized = Mathf.Clamp(desiredSteerNormalized, -1f, 1f);
+            steeringInput = desiredSteerNormalized; // keep legacy field updated for gizmos/visuals
         }
 
         void OnDrawGizmos()
@@ -279,93 +313,104 @@ namespace tum_car_controller
 
         void FixedUpdate()
         {
+            // Update kinematic model and then visuals
+            UpdateVehicleKinematics();
             RotateWheels();
             ApplySteeringWheelRotation();
 
-            HandleAcceleration();
-
-            if (currentSpeed != 0)  // Only steer if vehicle is moving
-            {
-                HandleSteering();
-            }
-
-            if (!isTeleportOnlyMode)
-            {
-                ApplyPhysics();
-            }
-
         }
 
-        void HandleAcceleration()
+        // Improved kinematic bicycle model with proper Unity coordinate system
+        void UpdateVehicleKinematics()
         {
-            // Manual driving overrides SUMO when enabled
-            if (manualDriven)
+            if (rb == null) return;
+
+            float dt = Time.fixedDeltaTime;
+
+            // 1) Determine drive command (-1..+1)
+            if (manualDriven || !isSumoVehicle)
             {
-                if (inputAccelerate && currentSpeed < maxSpeed)
-                {
-                    currentSpeed += acceleration * Time.fixedDeltaTime;
-                }
-                else if (inputBrake && currentSpeed > -maxReverseSpeed)
-                {
-                    currentSpeed -= brakingForce * Time.fixedDeltaTime;
-                }
-                else
-                {
-                    currentSpeed = Mathf.MoveTowards(currentSpeed, 0, deceleration * Time.fixedDeltaTime);
-                }
+                driveCommand = 0f;
+                if (inputAccelerate) driveCommand += 1f;
+                if (inputBrake) driveCommand -= 1f;
+                driveCommand = Mathf.Clamp(driveCommand, -1f, 1f);
             }
-            //sumo
-            else if (isSumoVehicle)
-            {
-                if (toruqeInputAccelerate > 0 && currentSpeed < maxSpeed)
-                {
-                    currentSpeed += acceleration * Time.fixedDeltaTime;
-                }
-                else if (toruqeInputBrake > 0 && currentSpeed > -maxReverseSpeed)
-                {
-                    currentSpeed -= brakingForce * Time.fixedDeltaTime;
-                }
-                else
-                {
-                    currentSpeed = Mathf.MoveTowards(currentSpeed, 0, deceleration * Time.fixedDeltaTime);
-                }
-            }
-            // manual
             else
             {
-                if (inputAccelerate && currentSpeed < maxSpeed)
-                {
-                    currentSpeed += acceleration * Time.fixedDeltaTime;
-                }
-                else if (inputBrake && currentSpeed > -maxReverseSpeed)
-                {
-                    currentSpeed -= brakingForce * Time.fixedDeltaTime;
-                }
+                // From SUMO torque inputs: sign is enough for a simple mapping
+                if (toruqeInputAccelerate > 0f)
+                    driveCommand = 1f;
+                else if (toruqeInputBrake > 0f)
+                    driveCommand = -1f;
                 else
-                {
-                    currentSpeed = Mathf.MoveTowards(currentSpeed, 0, deceleration * Time.fixedDeltaTime);
-                }
+                    driveCommand = 0f;
             }
 
-        }
+            // 2) Smooth steering towards target (deg)
+            float targetSteerDeg = Mathf.Clamp(desiredSteerNormalized, -1f, 1f) * Mathf.Min(maxSteeringAngle, maxSteerAngleDeg);
+            float steerStep = steerRateDegPerSec * dt;
+            steerAngleDeg = Mathf.MoveTowards(steerAngleDeg, targetSteerDeg, steerStep);
 
-        void HandleSteering()
-        {
-            float speedGain = 0.01f; // make steering at low speeds more realistic
-            Mathf.Clamp(speedGain * currentSpeed, -1f, 1f);
+            // 3) Longitudinal model with air drag and rolling resistance
+            float aLong = 0f;
+            if (driveCommand > 0f && currentSpeed < maxSpeed)
+            {
+                aLong = acceleration;
+            }
+            else if (driveCommand < 0f && currentSpeed > -maxReverseSpeed)
+            {
+                aLong = -brakingForce;
+            }
+            else if (Mathf.Approximately(driveCommand, 0f))
+            {
+                aLong = -Mathf.Sign(currentSpeed) * deceleration;
+            }
+            
+            // Apply air drag and rolling resistance
+            float dragForce = airDrag * currentSpeed * currentSpeed * Mathf.Sign(currentSpeed);
+            float rollingForce = rollingResistance * Mathf.Sign(currentSpeed);
+            aLong -= (dragForce + rollingForce);
+            
+            if (Mathf.Approximately(currentSpeed, 0f) && Mathf.Approximately(driveCommand, 0f))
+            {
+                aLong = 0f;
+            }
 
-            float steeringAngleCurrent = maxSteeringAngle * steeringInput;
-            // Adjust the pivot point to the rear axle
-            Vector3 pivotPoint = transform.position - transform.forward * wheelBase;
-            Quaternion rotation = Quaternion.AngleAxis(steeringAngleCurrent, Vector3.up);
-            rb.MovePosition(pivotPoint + rotation * (transform.position - pivotPoint));
-            rb.MoveRotation(rb.rotation * rotation);
-        }
+            // 4) Integrate speed and clamp
+            currentSpeed += aLong * dt;
+            currentSpeed = Mathf.Clamp(currentSpeed, -maxReverseSpeed, maxSpeed);
+            if (Mathf.Abs(currentSpeed) < 0.001f && Mathf.Approximately(driveCommand, 0f))
+                currentSpeed = 0f;
 
-        void ApplyPhysics()
-        {
-            Vector3 velocity = transform.forward * currentSpeed;
-            rb.velocity = new Vector3(velocity.x, rb.velocity.y, velocity.z);
+            // 5) Bicycle kinematics with proper Unity coordinate system
+            float L = Mathf.Max(lf + lr, 0.001f);
+            float steerRad = steerAngleDeg * Mathf.Deg2Rad;
+            
+            // Calculate yaw rate using bicycle model
+            float yawRate = (currentSpeed / L) * Mathf.Tan(steerRad);
+            
+            // Limit lateral acceleration to prevent unrealistic turning
+            float maxYawRate = maxLateralAccel / Mathf.Max(Mathf.Abs(currentSpeed), 0.1f);
+            yawRate = Mathf.Clamp(yawRate, -maxYawRate, maxYawRate);
+            
+            // Get current world heading from rigidbody rotation
+            float currentYawWorld = rb.rotation.eulerAngles.y * Mathf.Deg2Rad;
+            
+            // Update heading
+            currentYawWorld += yawRate * dt;
+            
+            // Apply frame offset correction
+            float adjustedYaw = currentYawWorld + frameYawOffsetDeg * Mathf.Deg2Rad;
+
+            // Calculate velocity in Unity's coordinate system (Z forward, X right)
+            Vector3 pos = rb.position;
+            // In Unity: Z is forward, X is right
+            pos.x += currentSpeed * Mathf.Sin(adjustedYaw) * dt;  // Right/left movement
+            pos.z += currentSpeed * Mathf.Cos(adjustedYaw) * dt;  // Forward/backward movement
+
+            // Apply pose - convert back to degrees for Quaternion
+            rb.MovePosition(pos);
+            rb.MoveRotation(Quaternion.Euler(0f, currentYawWorld * Mathf.Rad2Deg, 0f));
         }
 
         public void SetTeleportOnlyMode(bool value)
