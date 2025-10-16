@@ -8,58 +8,14 @@
  */
 
 using UnityEngine;
+using static tumvt.sumounity.Vehicle;  
+using tumvt.sumounity; 
 
 namespace tum_car_controller
 {
 
-    public class PIDController
-    {
-        private float kp; // Proportional gain
-        private float ki; // Integral gain
-        private float kd; // Derivative gain
-        
-        private float integralError = 0f; // Accumulated error
-        private float previousError = 0f; // Previous error
-
-        public PIDController(float kp, float ki, float kd)
-        {
-            this.kp = kp;
-            this.ki = ki;
-            this.kd = kd;
-        }
-
-        public float Control(float setpoint, float actualVelocity)
-        {
-            // Calculate the error between desired setpoint and actual velocity
-            float error = setpoint - actualVelocity;
-
-            // Proportional term
-            float proportionalTerm = kp * error;
-
-            // Integral term
-            integralError += error * Time.fixedDeltaTime;
-            float integralTerm = ki * integralError;
-
-            // Derivative term
-            float derivativeTerm = kd * (error - previousError) / Time.fixedDeltaTime;
-            previousError = error;
-
-            // Calculate the torque output using the PID controller
-            float torque = proportionalTerm + integralTerm + derivativeTerm;
-
-            return torque;
-        }
-
-        // This is useful if you want to reset the accumulated error and previous error under certain conditions
-        public void Reset()
-        {
-            integralError = 0f;
-            previousError = 0f;
-        }
-    }
-
     // public class CarController : MonoBehaviour, IVehicleController
-    public partial class CarController : MonoBehaviour
+    public class CarController : MonoBehaviour, IVehicleController 
     {
         public string id { get; set; } // SUMO Identifier in Vehicle Dictionary
         private Rigidbody rb;
@@ -72,7 +28,7 @@ namespace tum_car_controller
         private bool inputLeft = false;
         private bool inputRight = false;
         private bool isTeleportOnlyMode = false;
-        
+
         [Header("Manual Control")]
         [Tooltip("Enable to drive the car manually using WASD.")]
         public bool manualDriven = false; // default unchecked in inspector
@@ -375,12 +331,12 @@ namespace tum_car_controller
             {
                 aLong = -Mathf.Sign(currentSpeed) * deceleration;
             }
-            
+
             // Apply air drag and rolling resistance
             float dragForce = airDrag * currentSpeed * currentSpeed * Mathf.Sign(currentSpeed);
             float rollingForce = rollingResistance * Mathf.Sign(currentSpeed);
             aLong -= (dragForce + rollingForce);
-            
+
             if (Mathf.Approximately(currentSpeed, 0f) && Mathf.Approximately(driveCommand, 0f))
             {
                 aLong = 0f;
@@ -395,20 +351,20 @@ namespace tum_car_controller
             // 5) Bicycle kinematics with proper Unity coordinate system
             float L = Mathf.Max(lf + lr, 0.001f);
             float steerRad = steerAngleDeg * Mathf.Deg2Rad;
-            
+
             // Calculate yaw rate using bicycle model
             float yawRate = (currentSpeed / L) * Mathf.Tan(steerRad);
-            
+
             // Limit lateral acceleration to prevent unrealistic turning
             float maxYawRate = maxLateralAccel / Mathf.Max(Mathf.Abs(currentSpeed), 0.1f);
             yawRate = Mathf.Clamp(yawRate, -maxYawRate, maxYawRate);
-            
+
             // Get current world heading from rigidbody rotation
             float currentYawWorld = rb.rotation.eulerAngles.y * Mathf.Deg2Rad;
-            
+
             // Update heading
             currentYawWorld += yawRate * dt;
-            
+
             // Apply frame offset correction
             float adjustedYaw = currentYawWorld + frameYawOffsetDeg * Mathf.Deg2Rad;
 

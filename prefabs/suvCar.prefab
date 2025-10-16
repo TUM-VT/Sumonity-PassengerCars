@@ -364,6 +364,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6054995509596390150}
   - component: {fileID: 690978213791756299}
+  - component: {fileID: 7476311175589765751}
   m_Layer: 0
   m_Name: suvCar
   m_TagString: Untagged
@@ -409,21 +410,48 @@ MonoBehaviour:
   maxSteeringAngle: 25
   wheelBase: 0
   wheelRadius: 0.1
-  wheelJointFL: {fileID: 0}
-  wheelFL: {fileID: 0}
-  wheelJointFR: {fileID: 0}
-  wheelFR: {fileID: 0}
-  wheelRL: {fileID: 0}
-  wheelRR: {fileID: 0}
+  wheelJointFL: {fileID: 8798543122918385007}
+  wheelFL: {fileID: 6074907779216115019}
+  wheelJointFR: {fileID: 9132920061238535757}
+  wheelFR: {fileID: 7042783948742653915}
+  wheelRL: {fileID: 674252625965784718}
+  wheelRR: {fileID: 5171249386477422756}
   isSumoVehicle: 1
   lf: 1.5
   lr: 1.5
   maxSteerAngleDeg: 30
   steerRateDegPerSec: 120
   maxLateralAccel: 8
-  airDrag: 0.3
-  rollingResistance: 0.2
+  airDrag: 0.03
+  rollingResistance: 0.02
   frameYawOffsetDeg: 0
+--- !u!54 &7476311175589765751
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7014147353987398875}
+  serializedVersion: 4
+  m_Mass: 1
+  m_Drag: 0
+  m_AngularDrag: 0.05
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 1
+  m_IsKinematic: 0
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0
 --- !u!1 &7042783948742653915
 GameObject:
   m_ObjectHideFlags: 0
