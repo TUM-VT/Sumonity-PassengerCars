@@ -275,12 +275,13 @@ namespace tum_car_controller
         {
             // Calculate the current steering angle based on the input 
 
-            float visualSteeringMultiplicatorGain = 3f;
+            float visualSteeringMultiplicatorGain = 1f; // Use 1:1 ratio between visual and physics
             float visualSteeringAngle = steerAngleDeg * visualSteeringMultiplicatorGain;
             visualSteeringAngle = Mathf.Clamp(visualSteeringAngle, -maxSteeringAngle * visualSteeringMultiplicatorGain, maxSteeringAngle * visualSteeringMultiplicatorGain);
 
             // Apply the steering angle to the front wheels (Y axis assumed up)
-            Quaternion steeringRotation = Quaternion.Euler(0, visualSteeringAngle, 0);
+            // Add 180° Y-axis offset to flip wheels so rims face outward
+            Quaternion steeringRotation = Quaternion.Euler(0, visualSteeringAngle + 180f, 0);
             if (wheelJointFL != null && wheelJointFR != null)
             {
                 wheelJointFL.transform.localRotation = steeringRotation;
