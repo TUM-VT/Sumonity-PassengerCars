@@ -63,6 +63,12 @@ namespace tum_car_controller
         private Vector2 rbMarker;
         private float stopState;
 
+        [Header("Position Accuracy Logging")]
+        [Tooltip("Enable position accuracy logging for this vehicle")]
+        public bool enablePositionLogging = true;
+        private Vector3 lastSumoGroundTruthPosition;
+        private bool hasLoggedSuccessfully = false;  // Track if we've successfully logged at least once
+
         [Header("Dynamic Model")]
         [Tooltip("Distance from CG to front axle [m]")]
         public float lf = 1.5f;
@@ -183,6 +189,12 @@ namespace tum_car_controller
 
             UpdateVehicleControls(steeringValue, torqueInput, desiredVelocity);
             stopState = getVehicleStopState(ref sock, id);
+
+            // Log position accuracy
+            if (enablePositionLogging)
+            {
+                LogPositionAccuracy();
+            }
         }
 
         private void UpdateVehicleControls(float steeringValue, float torqueInput, float desiredVelocity)
@@ -382,6 +394,73 @@ namespace tum_car_controller
         public void SetTeleportOnlyMode(bool value)
         {
             isTeleportOnlyMode = value;
+        }
+
+        /// <summary>
+        /// Log position accuracy by comparing Unity physics position with SUMO ground truth
+        /// </summary>
+        private void LogPositionAccuracy()
+        {
+            // Add diagnostic logging to understand why data isn't being written
+            if (sock == null)
+            {
+                Debug.LogWarning($"[CarController] {id}: Cannot log position - sock is null");
+                return;
+            }
+            
+            if (sock.StepInfo == null)
+            {
+                Debug.LogWarning($"[CarController] {id}: Cannot log position - sock.StepInfo is null");
+                return;
+            }
+
+            // Get SUMO ground truth position for this vehicle
+            SerializableVehicle sumoVehicle = GetSumoVehicleData();
+            if (sumoVehicle == null)
+            {
+                Debug.LogWarning($"[CarController] {id}: Cannot log position - SUMO vehicle data not found");
+                return;
+            }
+
+            Vector3 sumoGroundTruth = new Vector3(sumoVehicle.positionX, 0, sumoVehicle.positionY);
+            Vector3 unityPosition = rb.position;
+
+            // Store for reference
+            lastSumoGroundTruthPosition = sumoGroundTruth;
+
+            // Log to the global position accuracy logger
+            PositionAccuracyLogger.Instance.LogPositionAccuracy(
+                id,
+                unityPosition,
+                sumoGroundTruth,
+                currentSpeed,
+                steerAngleDeg
+            );
+            
+            // One-time success message to confirm logging is working
+            if (!hasLoggedSuccessfully)
+            {
+                Debug.Log($"[CarController] {id}: Successfully logged position data to PositionAccuracyLogger");
+                hasLoggedSuccessfully = true;
+            }
+        }
+
+        /// <summary>
+        /// Get SUMO vehicle data from the step info
+        /// </summary>
+        private SerializableVehicle GetSumoVehicleData()
+        {
+            if (sock == null || sock.StepInfo == null || sock.StepInfo.vehicleList == null)
+                return null;
+
+            foreach (SerializableVehicle veh in sock.StepInfo.vehicleList)
+            {
+                if (id == veh.id)
+                {
+                    return veh;
+                }
+            }
+            return null;
         }
 
     }
