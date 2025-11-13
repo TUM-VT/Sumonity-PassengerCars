@@ -66,6 +66,8 @@ namespace tum_car_controller
         [Header("Position Accuracy Logging")]
         [Tooltip("Enable position accuracy logging for this vehicle")]
         public bool enablePositionLogging = true;
+        [Tooltip("Duration in seconds to ignore before starting to record (default: 20)")]
+        public float recordingDelaySeconds = 20f;
         private Vector3 lastSumoGroundTruthPosition;
         private bool hasLoggedSuccessfully = false;  // Track if we've successfully logged at least once
 
@@ -401,6 +403,12 @@ namespace tum_car_controller
         /// </summary>
         private void LogPositionAccuracy()
         {
+            // Skip recording during the initial delay period
+            if (Time.time < recordingDelaySeconds)
+            {
+                return;
+            }
+
             // Add diagnostic logging to understand why data isn't being written
             if (sock == null)
             {
